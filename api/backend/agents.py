@@ -1,6 +1,9 @@
 import json
+import logging
 
 from .llm_utils import call_llm
+
+logger = logging.getLogger(__name__)
 
 TIME_RANGE_PARSE_PROMPT = """
 You are given with a user query about investigating an issue that happened within a specific time range.
@@ -50,23 +53,23 @@ Output Format:
 """
 
 def parse_time_range(query):
-    print(f"[DEBUG] Parsing time range from query: {query}")
+    logger.info(f"Parsing time range from query: {query}")
     prompt = TIME_RANGE_PARSE_PROMPT.replace("<<query>>", query)
     response = call_llm(prompt)
-    print(f"[DEBUG] LLM response for time parsing: {response}")
+    logger.info(f"LLM response for time parsing: {response}")
     time_range = json.loads(response)
     start_time = f"2026-01-01 {time_range['start_time']}"
     end_time = f"2026-01-01 {time_range['end_time']}"
-    print(f"[DEBUG] Extracted times - Start: {start_time}, End: {end_time}")
+    logger.info(f"Extracted times - Start: {start_time}, End: {end_time}")
     return start_time, end_time
 
 def run_investigator(query, context):
-    print(f"[DEBUG] Starting investigation for query: {query}")
+    logger.info(f"Starting investigation for query: {query}")
     requests = context['requests']
     application_logs = context['application_logs']
     request_metrics = context['request_metrics']
     pod_metrics = context['pod_metrics']
-    print(f"[DEBUG] Context data - Requests: {len(requests)}, Logs: {len(application_logs)}, Metrics: {len(request_metrics)}, Pod metrics: {len(pod_metrics)}")
+    logger.info(f"Context data - Requests: {len(requests)}, Logs: {len(application_logs)}, Metrics: {len(request_metrics)}, Pod metrics: {len(pod_metrics)}")
 
     prompt = INVESTIGATION_PROMPT.replace("<<query>>", query)
     prompt = prompt.replace("<<requests>>", json.dumps(requests, indent=2))
@@ -74,8 +77,9 @@ def run_investigator(query, context):
     prompt = prompt.replace("<<request_metrics>>", json.dumps(request_metrics, indent=2))
     prompt = prompt.replace("<<pod_metrics>>", json.dumps(pod_metrics, indent=2))
 
+    logger.info("Calling LLM for investigation analysis")
     response = call_llm(prompt)
-    print(f"[DEBUG] LLM investigation response: {response[:200]}...") # Print first 200 chars
+    logger.info(f"LLM investigation response received ({len(response)} characters)")
     investigation_result = json.loads(response)
-    print(f"[DEBUG] Investigation result keys: {list(investigation_result.keys())}")
+    logger.info(f"Investigation result keys: {list(investigation_result.keys())}")
     return investigation_result

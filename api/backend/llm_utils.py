@@ -1,8 +1,11 @@
 from ollama import chat
+import logging
+
+logger = logging.getLogger(__name__)
 
 def call_llm(prompt, provider="ollama", model_name="qwen3:4b"):
-    print(f"[DEBUG] Calling LLM with model: {model_name}")
-    print(f"[DEBUG] Prompt length: {len(prompt)} characters")
+    logger.info(f"Calling LLM with model: {model_name}")
+    logger.info(f"Prompt length: {len(prompt)} characters")
     try:
         response = chat(
             model=model_name,
@@ -14,8 +17,8 @@ def call_llm(prompt, provider="ollama", model_name="qwen3:4b"):
             ]
         )
         result = response.message.content
-        print(f"[DEBUG] LLM response length: {len(result)} characters")
+        logger.info(f"LLM response length: {len(result)} characters")
         return result
     except Exception as e:
-        print(f"[DEBUG] Error calling LLM: {str(e)}")
+        logger.info(f"Error calling LLM: {str(e)}")
         raise

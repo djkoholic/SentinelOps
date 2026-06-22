@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  @apply m-0 p-0 box-border;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100 font-sans;
+}
+
+html {
+  @apply scroll-smooth;
+}
+
+/* Custom animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Loading spinner */
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(148, 163, 184, 0.2);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Report formatting */
+.report-section {
+  @apply mb-6 pb-6 border-b border-slate-700 last:border-b-0;
+}
+
+.report-section h3 {
+  @apply text-lg font-semibold text-blue-400 mb-3;
+}
+
+.report-content {
+  @apply text-slate-300 leading-relaxed;
+}
+
+/* Debug log styling - base class */
+.debug-log-entry {
+  @apply py-2 px-3 bg-slate-900 rounded text-xs font-mono;
+}
+
+.debug-log-entry.info {
+  @apply text-blue-300;
+}
+
+.debug-log-entry.warning {
+  @apply text-yellow-300;
+}
+
+.debug-log-entry.error {
+  @apply text-red-300;
+}
