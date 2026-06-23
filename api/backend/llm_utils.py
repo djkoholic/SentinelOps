@@ -1,4 +1,5 @@
 from ollama import chat
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ def call_llm(prompt, provider="ollama", model_name="qwen3:4b"):
         )
         result = response.message.content
         logger.info(f"LLM response length: {len(result)} characters")
+        result = json.loads(result)
         return result
     except Exception as e:
         logger.info(f"Error calling LLM: {str(e)}")
