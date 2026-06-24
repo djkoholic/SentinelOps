@@ -1,19 +1,15 @@
-# api/main.py
 from fastapi import FastAPI
 from pydantic import BaseModel
-import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
-import logging
+
+import uvicorn
 import asyncio
+import threading
 import uuid
 import json
-from datetime import datetime
-import concurrent.futures
-import threading
 
-from backend.agents import parse_time_range, run_investigator
-from backend.data_collector import collect_data
+from backend.investigator import Investigator
 
 app = FastAPI()
 
@@ -28,175 +24,144 @@ app.add_middleware(
 class InvestigationRequest(BaseModel):
     query: str
 
-# Store ongoing investigations with thread locks for safety
+
+# ============================================================
+# Investigation State
+# ============================================================
+
 investigations = {}
 investigations_lock = threading.Lock()
 
-class LogCapture(logging.Handler):
-    """Custom logging handler that stores logs for streaming"""
-    def __init__(self, investigation_id):
-        super().__init__()
-        self.investigation_id = investigation_id
 
-    def emit(self, record):
-        try:
-            # Only capture INFO and higher level logs
-            if record.levelno >= logging.INFO:
-                msg = self.format(record)
-                # Safely append to investigation logs
-                with investigations_lock:
-                    if self.investigation_id in investigations:
-                        investigations[self.investigation_id]['logs'].append(msg)
-        except Exception:
-            self.handleError(record)
+def create_event_callback(investigation_id):
+    def push_event(event):
+        with investigations_lock:
+            if investigation_id in investigations:
+                investigations[investigation_id]["events"].append(event)
+
+    return push_event
+
+
+# ============================================================
+# Investigation Runner
+# ============================================================
+
+def run_investigation(investigation_id, query):
+    try:
+        callback = create_event_callback(investigation_id)
+
+        investigator = Investigator(
+            query=query,
+            event_callback=callback,
+        )
+
+        result = investigator.investigate()
+
+        with investigations_lock:
+            investigations[investigation_id]["result"] = result
+            investigations[investigation_id]["status"] = "completed"
+
+    except Exception as e:
+        with investigations_lock:
+            investigations[investigation_id]["status"] = "error"
+            investigations[investigation_id]["error"] = str(e)
+
+
+# ============================================================
+# API
+# ============================================================
 
 @app.post("/investigate")
 async def investigate(request: InvestigationRequest):
-    """Start an investigation and return investigation_id for streaming"""
+
     investigation_id = str(uuid.uuid4())
-    
-    # Initialize investigation record
+
     with investigations_lock:
         investigations[investigation_id] = {
-            'logs': [],
-            'result': None,
-            'status': 'running',
-            'error': None,
-            'created_at': datetime.now()
+            "events": [],
+            "status": "running",
+            "result": None,
+            "error": None,
         }
-    
-    # Run investigation in background thread (not async task)
+
     thread = threading.Thread(
-        target=run_investigation_sync,
+        target=run_investigation,
         args=(investigation_id, request.query),
-        daemon=True
+        daemon=True,
     )
+
     thread.start()
-    
+
     return {
+        "status": "started",
         "investigation_id": investigation_id,
-        "status": "started"
     }
 
-def run_investigation_sync(investigation_id, query):
-    """Background thread to run investigation (synchronous)"""
-    # Set up logging
-    log_capture = LogCapture(investigation_id)
-    log_capture.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-    log_capture.setLevel(logging.INFO)  # Only capture INFO and higher level logs
-    
-    root_logger = logging.getLogger()
-    old_level = root_logger.level
-    old_handlers = list(root_logger.handlers)
-    
-    # Clear and set up handlers
-    for handler in old_handlers:
-        root_logger.removeHandler(handler)
-    
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(log_capture)
-    
-    # Configure backend loggers to propagate
-    for module_name in ['backend.agents', 'backend.data_collector', 'backend.llm_utils', '__main__']:
-        logger = logging.getLogger(module_name)
-        logger.setLevel(logging.INFO)
-        logger.propagate = True
-    
-    try:
-        logger = logging.getLogger(__name__)
-        logger.info("Starting investigation")
-        
-        # Parse the query to extract time range
-        start_time, end_time = parse_time_range(query)
-        logger.info(f"Parsed time range - Start: {start_time}, End: {end_time}")
-
-        # Collect data based on the parsed time range
-        all_data = collect_data(start_time, end_time)
-        logger.info(f"Collected data - Requests: {len(all_data['requests'])}, Logs: {len(all_data['application_logs'])}, Metrics: {len(all_data['request_metrics'])}")
-
-        # Run the investigation
-        answer = run_investigator(query, all_data)
-        logger.info("Investigation complete")
-
-        with investigations_lock:
-            investigations[investigation_id]['result'] = answer
-            investigations[investigation_id]['status'] = 'completed'
-
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.error(f"Investigation failed: {str(e)}")
-        with investigations_lock:
-            investigations[investigation_id]['error'] = str(e)
-            investigations[investigation_id]['status'] = 'error'
-    
-    finally:
-        # Clean up logging
-        root_logger.removeHandler(log_capture)
-        root_logger.setLevel(old_level)
-        for handler in old_handlers:
-            root_logger.addHandler(handler)
 
 @app.get("/stream/{investigation_id}")
-async def stream_logs(investigation_id: str):
-    """Stream logs for an investigation in real-time"""
-    
-    with investigations_lock:
-        if investigation_id not in investigations:
-            return {"error": "Investigation not found"}, 404
-    
+async def stream(investigation_id: str):
+
     async def event_generator():
-        """Generator that yields log events"""
-        last_log_index = 0
-        last_emit_time = 0
-        
+
+        last_index = 0
+
         while True:
+
             with investigations_lock:
                 investigation = investigations.get(investigation_id)
-            
+
             if investigation is None:
                 break
-            
-            # Stream any new logs
-            current_logs = investigation['logs']
-            while last_log_index < len(current_logs):
-                log_msg = current_logs[last_log_index]
-                # EventSourceResponse handles the "data: " prefix, so just yield JSON
-                yield json.dumps({'type': 'log', 'message': log_msg}) + '\n\n'
-                last_log_index += 1
-            
-            # Check if investigation is complete
-            if investigation['status'] in ['completed', 'error']:
-                # Send any final logs first
-                while last_log_index < len(investigation['logs']):
-                    log_msg = investigation['logs'][last_log_index]
-                    yield json.dumps({'type': 'log', 'message': log_msg}) + '\n\n'
-                    last_log_index += 1
-                
-                # Send final result
-                final_data = {
-                    'type': 'complete',
-                    'status': investigation['status'],
-                    'result': investigation.get('result'),
-                    'error': investigation.get('error')
+
+            # Send newly generated events
+            while last_index < len(investigation["events"]):
+
+                yield {
+                    "data": json.dumps(
+                        investigation["events"][last_index]
+                    )
                 }
-                yield json.dumps(final_data) + '\n\n'
-                
-                # Clean up
+
+                last_index += 1
+
+            # Investigation completed
+            if investigation["status"] == "completed":
+
+                yield {
+                    "data": json.dumps(
+                        {
+                            "type": "complete",
+                            "result": investigation["result"],
+                        }
+                    )
+                }
+
                 with investigations_lock:
-                    if investigation_id in investigations:
-                        del investigations[investigation_id]
+                    investigations.pop(investigation_id, None)
+
                 break
-            
-            # Debounce: only check for new logs every 0.5 seconds
-            current_time = asyncio.get_event_loop().time()
-            if current_time - last_emit_time < 0.5:
-                await asyncio.sleep(0.5 - (current_time - last_emit_time))
-            else:
-                last_emit_time = current_time
-            
-            await asyncio.sleep(0.05)
+
+            # Investigation failed
+            if investigation["status"] == "error":
+
+                yield {
+                    "data": json.dumps(
+                        {
+                            "type": "error",
+                            "error": investigation["error"],
+                        }
+                    )
+                }
+
+                with investigations_lock:
+                    investigations.pop(investigation_id, None)
+
+                break
+
+            await asyncio.sleep(0.25)
 
     return EventSourceResponse(event_generator())
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

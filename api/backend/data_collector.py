@@ -3,69 +3,50 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def query_requests_table(cursor, start_time, end_time):
-    logger.info(f"Querying requests table for time range: {start_time} to {end_time}")
-    query = """
-    SELECT * FROM requests
-    WHERE timestamp BETWEEN ? AND ?
-    """
-    cursor.execute(query, (start_time, end_time))
-    results = cursor.fetchall()
-    logger.info(f"Found {len(results)} requests")
-    return results
+DATABASE_PATH = "/home/djkoholic/Projects/SentinelOps/data-store/sentinelops.db"
 
-def query_application_logs_table(cursor, request_ids):
-    logger.info(f"Querying application_logs for {len(request_ids)} request IDs")
-    query = """
-    SELECT * FROM application_logs
-    WHERE request_id IN ({})
-    """.format(','.join('?' for _ in request_ids))
-    cursor.execute(query, request_ids)
-    results = cursor.fetchall()
-    logger.info(f"Found {len(results)} application logs")
-    return results
+class DataCollector:
+    
+    def __init__(self, start_time=None, end_time=None, request_ids=[]):
+        self.connection = sqlite3.connect(DATABASE_PATH)
+        self.request_ids = request_ids
+        self.start_time = start_time
+        self.end_time = end_time
 
-def query_request_metrics_table(cursor, request_ids):
-    logger.info(f"Querying request_metrics for {len(request_ids)} request IDs")
-    query = """
-    SELECT * FROM request_metrics
-    WHERE request_id IN ({})
-    """.format(','.join('?' for _ in request_ids))
-    cursor.execute(query, request_ids)
-    results = cursor.fetchall()
-    logger.info(f"Found {len(results)} request metrics")
-    return results
+    def _create_query(self, table_name):
+        query = f"SELECT * FROM {table_name}"
+        conditions = []
+        params = []
 
-def query_pod_metrics_table(cursor, start_time, end_time):
-    logger.info(f"Querying pod_metrics for time range: {start_time} to {end_time}")
-    query = """
-    SELECT * FROM pod_metrics
-    WHERE timestamp BETWEEN ? AND ?
-    """
-    cursor.execute(query, (start_time, end_time))
-    results = cursor.fetchall()
-    logger.info(f"Found {len(results)} pod metrics")
-    return results
+        if self.start_time and self.end_time:
+            conditions.append("timestamp BETWEEN ? AND ?")
+            params.extend([self.start_time, self.end_time])
 
-def query_database(cursor, start_time, end_time):
-    requests = query_requests_table(cursor, start_time, end_time)
-    request_ids = [request[0] for request in requests]
-    application_logs = query_application_logs_table(cursor, request_ids)
-    request_metrics = query_request_metrics_table(cursor, request_ids)
-    pod_metrics = query_pod_metrics_table(cursor, start_time, end_time)
+        if self.request_ids:
+            placeholders = ",".join(["?"] * len(self.request_ids))
+            conditions.append(f"request_id IN ({placeholders})")
+            params.extend(self.request_ids)
 
-    return {
-        "requests": requests,
-        "application_logs": application_logs,
-        "request_metrics": request_metrics,
-        "pod_metrics": pod_metrics
-    }
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
 
-def collect_data(start_time, end_time):
-    logger.info("Opening database connection")
-    conn = sqlite3.connect("/home/djkoholic/Projects/SentinelOps/data-store/sentinelops.db")
-    cursor = conn.cursor()
-    data = query_database(cursor, start_time, end_time)
-    conn.close()
-    logger.info("Database connection closed")
-    return data
+        return query, params
+
+    def _query_database(self, query, params):
+        cursor = self.connection.cursor()
+        cursor.execute(query, params)
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        return columns, rows
+
+    def _format_results(self, columns, rows):
+        return [dict(zip(columns, row)) for row in rows]
+
+    def collect_data(self, table_name):
+        query, params = self._create_query(table_name)
+        columns, rows = self._query_database(query, params)
+        formatted_results = self._format_results(columns, rows)
+        return formatted_results
+
+    def close_connection(self):
+        self.connection.close()
