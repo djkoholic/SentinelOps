@@ -35,16 +35,17 @@ class DataCollector:
     def _query_database(self, query, params):
         cursor = self.connection.cursor()
         cursor.execute(query, params)
-        results = cursor.fetchall()
-        return results
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        return columns, rows
 
-    def _format_results(self, results):
-        pass
+    def _format_results(self, columns, rows):
+        return [dict(zip(columns, row)) for row in rows]
 
     def collect_data(self, table_name):
         query, params = self._create_query(table_name)
-        results = self._query_database(query, params)
-        formatted_results = self._format_results(results):
+        columns, rows = self._query_database(query, params)
+        formatted_results = self._format_results(columns, rows)
         return formatted_results
 
     def close_connection(self):

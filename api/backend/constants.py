@@ -1,36 +1,9 @@
 POSSIBLE_HYPOTHESIS = {
-    "user_input_issue":
-        """
-        The failures are caused by the requests themselves rather than the system.
-        Users may be submitting off-topic questions, excessively long prompts,
-        malformed requests, unsupported queries, or content that violates
-        validation rules. The system is behaving correctly by rejecting these
-        requests.
-        """,
+    "user_input_issue": "The failures are caused by the requests themselves rather than the system. Users may be submitting off-topic questions, excessively long prompts, malformed requests, unsupported queries, or content that violates validation rules. The system is behaving correctly by rejecting these requests.",
+    "application_bug": "The failures are caused by a bug in the application code. Requests that should have succeeded are failing due to exceptions, incorrect business logic, validation bugs, integration issues, database errors, or unexpected edge cases in the implementation.",
+    "traffic_spike": "The failures are caused by an unusual increase in traffic volume. A sudden surge in requests may overwhelm the application, increase latency, exhaust resources, trigger rate limits, or cause request timeouts and degraded performance.",
+    "model_quality_issue": "The system is operational, but the model output quality is poor. Users may be dissatisfied with responses, confidence scores may be low, answers may be inaccurate or incomplete, or there may be a noticeable degradation in model performance despite successful request processing."
 
-    "application_bug":
-        """
-        The failures are caused by a bug in the application code.
-        Requests that should have succeeded are failing due to exceptions,
-        incorrect business logic, validation bugs, integration issues,
-        database errors, or unexpected edge cases in the implementation.
-        """,
-
-    "traffic_spike":
-        """
-        The failures are caused by an unusual increase in traffic volume.
-        A sudden surge in requests may overwhelm the application, increase
-        latency, exhaust resources, trigger rate limits, or cause request
-        timeouts and degraded performance.
-        """,
-
-    "model_quality_issue":
-        """
-        The system is operational, but the model output quality is poor.
-        Users may be dissatisfied with responses, confidence scores may be low,
-        answers may be inaccurate or incomplete, or there may be a noticeable
-        degradation in model performance despite successful request processing.
-        """
 }
 
 POSSIBLE_ACTIONS = {

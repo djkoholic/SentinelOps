@@ -1,12 +1,12 @@
 from ollama import chat
-import json
+import json_repair
 import logging
 
 logger = logging.getLogger(__name__)
 
 def call_llm(prompt, provider="ollama", model_name="qwen3:4b"):
-    logger.info(f"Calling LLM with model: {model_name}")
-    logger.info(f"Prompt length: {len(prompt)} characters")
+    print(f"Calling LLM with model: {model_name}")
+    print(f"Prompt: {prompt}")
     try:
         response = chat(
             model=model_name,
@@ -18,9 +18,9 @@ def call_llm(prompt, provider="ollama", model_name="qwen3:4b"):
             ]
         )
         result = response.message.content
-        logger.info(f"LLM response length: {len(result)} characters")
-        result = json.loads(result)
+        result = json_repair.loads(result)
+        print(f"LLM response: {result}")
         return result
     except Exception as e:
-        logger.info(f"Error calling LLM: {str(e)}")
+        print(f"Error calling LLM: {str(e)}")
         raise

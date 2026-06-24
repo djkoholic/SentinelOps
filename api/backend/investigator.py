@@ -5,13 +5,14 @@ from collections import deque
 
 from .data_collector import DataCollector
 from .llm_utils import call_llm
-from .prompts import HYPOTHESIS_RANKING_PROMPT, TIME_RANGE_PARSE_PROMPT
+from .prompts import HYPOTHESIS_RANKING_PROMPT, INVESTIGATION_REPORT_NO_CONCLUSION_PROMPT, INVESTIGATION_REPORT_PROMPT, TIME_RANGE_PARSE_PROMPT, EVIDENCE_EVALUATION_PROMPT, HYPOTHESIS_PROOF_PROMPT
 from .constants import POSSIBLE_HYPOTHESIS, ACTION_REGISTRY, HYPOTHESIS_TO_TOOL_RANKED
 
 logger = logging.getLogger(__name__)
 
 class Investigator:
     def __init__(self, query):
+        self.is_hypothesis_proven = False
         self.evidences = []
         self.findings = []
         self.past_actions = []
@@ -26,8 +27,7 @@ class Investigator:
         self.ranked_hypothesis = self._rank_hypothesis()
 
     def _rank_hypothesis(self):
-        hypothesis_str = "\n\n".join(f"{name}:\n{description.strip()}" for name, description in POSSIBLE_HYPOTHESIS.items())
-        prompt = HYPOTHESIS_RANKING_PROMPT.replace("<<query>>", self.query).replace("<<hypothesis>>", hypothesis_str)
+        prompt = HYPOTHESIS_RANKING_PROMPT.replace("<<query>>", self.query).replace("<<hypotheses>>", json.dumps(POSSIBLE_HYPOTHESIS, indent=2))
         ranked_hypothesis =  call_llm(prompt)
         return ranked_hypothesis
 
@@ -41,68 +41,63 @@ class Investigator:
         logger.info(f"Extracted times - Start: {start_time}, End: {end_time}")
         return start_time, end_time
     
-    def _summarize_findings(self):
-        pass
+    def _evaluate_evidence(self, hypothesis, evidence):
+        prompt = EVIDENCE_EVALUATION_PROMPT.replace("<<hypothesis>>", hypothesis).replace("<<evidence>>", json.dumps(evidence, indent=2))
+        response = call_llm(prompt)
+        return response['finding']
 
-    def _evaluate_findings(self):
-        pass
+    def _prove_hypothesis(self, hypothesis):
+        prompt = HYPOTHESIS_PROOF_PROMPT.replace("<<query>>", self.query).replace("<<hypothesis>>", hypothesis).replace("<<findings>>", json.dumps(self.findings, indent=2)).replace("<<actions>>", json.dumps(self.past_actions, indent=2))
+        response = call_llm(prompt)
+        hypothesis_proven = response['hypothesis_proven']
+        reason = response['reason']
+        if hypothesis_proven.lower() == 'yes':
+            return True, reason
+        else:
+            return False, reason
 
+    def _generate_investigation_report(self):
+        if self.is_hypothesis_proven:
+            prompt = INVESTIGATION_REPORT_PROMPT.replace("<<query>>", self.query).replace("<<hypothesis>>", self.proven_hypothesis).replace("<<proof_reason>>", self.proof_reason).replace("<<findings>>", json.dumps(self.findings, indent=2))
+        else:
+            prompt = INVESTIGATION_REPORT_NO_CONCLUSION_PROMPT.replace("<<query>>", self.query).replace("<<hypothesis>>", json.dumps(POSSIBLE_HYPOTHESIS, indent=2)).replace("<<findings>>", json.dumps(self.findings, indent=2))
+        response = call_llm(prompt)
+        return response
+        
     def investigate(self):
        
         # Step 3: The loop begins here, where we try to prove the hypothesis one by one based on ranking
         for curr_hypothesis in self.ranked_hypothesis:
+            print(f"Evaluating hypothesis: {curr_hypothesis}")
             # Pick the first hypothesis and determine the best tool to prove it.
             # This part will be a prompt but for now we can hard code hypothesis to tool mapping
-            remaining_actions = deque(HYPOTHESIS_TO_TOOL_RANKED(curr_hypothesis))
+            remaining_actions = deque(HYPOTHESIS_TO_TOOL_RANKED[curr_hypothesis])
+            print(f"Tools: {remaining_actions}")
             
             while remaining_actions:
                 action = remaining_actions.popleft()
+                if action in self.past_actions:
+                    print(f"Tool: {action} already executed, skipping...")
+                print(f"Running tool: {action}")
                 # Step 4: Execute the tool and get the context
-                context = self.data_collector.collect_data(ACTION_REGISTRY[action])
+                evidence = self.data_collector.collect_data(ACTION_REGISTRY[action])
+                print(f"Found evidence: {evidence}")
                 
-            # The hypothesis we are currently proving alongwith the context is used to determine if current evidence supports the hypothesis
-            # or do we need to gather more evidence or reject the hypothesis and move to the next one.
-            evidence_summary = self._evaluate_evidence(hypothesis, context)
+                finding = self._evaluate_evidence(curr_hypothesis, evidence)
+                print(f"Findings from found evidence: {finding}")
+                self.evidences.append(evidence)
+                self.findings.append(finding)
+                self.past_actions.append(action)
 
-            self.evidence.append(evidence_summary)
-            self.past_actions.append(f"Used tool {tool} to prove hypothesis {hypothesis}")
+                is_hypothesis_proven, reason = self._prove_hypothesis(curr_hypothesis)
 
+                if is_hypothesis_proven:
+                    self.proven_hypothesis = curr_hypothesis
+                    self.is_hypothesis_proven = is_hypothesis_proven
+                    self.proof_reason = reason
+                    
+                    return self._generate_investigation_report()
             # If evidence proves - send everything to a prompt and generate report - loop ends here
-            if self._is_hypothesis_proven(hypothesis, evidence_summary):
-                report = self._generate_report(hypothesis, evidence_summary, self.past_actions)
-                return report
 
         # If no hypothesis is proven, return a summary of the investigation
-        return self._generate_summary()
-
-    def _determine_time_range(self, query):
-        # Placeholder for logic to determine time range based on query
-        return "All time"
-
-    def _rank_hypothesis(self, hypothesis, query):
-        # Placeholder for logic to rank hypothesis based on query
-        return hypothesis
-
-    def _select_tool(self, hypothesis):
-        # Placeholder for logic to select the best tool for the hypothesis
-        return "tool_1"
-
-    def _execute_tool(self, tool, time_range):
-        # Placeholder for logic to execute the tool and get context
-        return f"Context from {tool} for {time_range}"
-
-    def _evaluate_evidence(self, hypothesis, context):
-        # Placeholder for logic to evaluate evidence based on hypothesis and context
-        return f"Evidence for {hypothesis} from {context}"
-
-    def _is_hypothesis_proven(self, hypothesis, evidence_summary):
-        # Placeholder for logic to determine if hypothesis is proven based on evidence
-        return True
-
-    def _generate_report(self, hypothesis, evidence_summary, past_actions):
-        # Placeholder for logic to generate a report based on hypothesis, evidence, and past actions
-        return f"Report for hypothesis {hypothesis} with evidence {evidence_summary} and actions {past_actions}"
-
-    def _generate_summary(self):
-        # Placeholder for logic to generate a summary of the investigation
-        return "No hypothesis was proven during the investigation."
+        return self._generate_investigation_report()
