@@ -1,9 +1,37 @@
 from datetime import datetime
 
-from backend.agent.llms import time_range_llm, planner_llm
-from backend.agent.schemas import BeliefState, InvestigatorState
-from backend.agent.prompts import TIME_RANGE_PROMPT, PLANNER_PROMPT
-from backend.agent.utils import load_markdown
+from backend.agent.tools import build_tools
+from backend.agent.llms import llm, time_range_llm, planner_llm, evidence_summary_llm, evidence_assessor_llm
+from backend.agent.schemas import BeliefState, InvestigatorState, Conclusion
+from backend.agent.prompts import TIME_RANGE_PROMPT, PLANNER_PROMPT, EVIDENCE_GATHERER_PROMPT, EVIDENCE_SUMMARY_PROMPT, EVIDENCE_ASSESSOR_PROMPT
+
+def route_after_assessment(state: InvestigatorState) -> str:
+    print("Inside route_after_assessment...")
+    conclusion = state.get("conclusion")
+    iteration_count = state.get("iteration_count", 0)
+    max_iterations = state.get("max_iterations", 6)
+
+    # available_actions being empty means every tool has been used at least once
+    all_tools = build_tools(state["start_time"], state["end_time"])
+    already_used = set(state.get("past_actions", []))
+    tools_remaining = len(already_used) < len(all_tools)
+
+    print(f"Conclusive: {conclusion.conclusive if conclusion else None}")
+    print(f"Iteration count: {iteration_count}/{max_iterations}")
+    print(f"Tools remaining: {tools_remaining} ({len(already_used)}/{len(all_tools)} used)")
+
+    if conclusion and conclusion.conclusive:
+        print("Routing to generate_report (conclusive)")
+        return "generate_report"
+    if iteration_count >= max_iterations:
+        print("Routing to generate_report (max iterations reached)")
+        return "generate_report"
+    if not tools_remaining:
+        print("Routing to generate_report (no tools remaining)")
+        return "generate_report"
+
+    print("Routing to planner (continuing investigation)")
+    return "planner"
 
 def time_range_parser(state: InvestigatorState) -> dict:
     """
@@ -42,6 +70,7 @@ def planner(state: InvestigatorState) -> dict:
     This node takes the current state of the investigation and uses the LLM to generate a belief state.
     """
     print("Inside planner node...")
+    print(f"Iteration count so far: {state.get('iteration_count', 0)}")
     messages = PLANNER_PROMPT.invoke({
         "operational_memory": state.get("operational_memory", "No operational memory provided"),
         "query": state["query"],
@@ -53,10 +82,104 @@ def planner(state: InvestigatorState) -> dict:
     print("Calling LLM...")
     belief_state: BeliefState = planner_llm.invoke(messages)
     print("LLM Response Received...")
+    print("Selected hypothesis:", belief_state.selected_hypothesis)
     print("Belief State:", belief_state)
     print("Returning from planner node...")
     return {
         "belief_state": belief_state,
         "hypothesis_history": list(belief_state.belief_state),
         "iteration_count": state.get("iteration_count", 0) + 1,
+    }
+
+def evidence_gatherer(state: InvestigatorState) -> dict:
+    """
+    This node gathers evidence based on the current belief state and the available tools.
+    It uses the LLM to select which tool to use next and summarizes the evidence gathered.
+    """
+    print("Inside evidence_gatherer node...")
+    all_tools = build_tools(state["start_time"], state["end_time"])
+
+    already_used = set(state.get("past_actions", []))
+    remaining_tools = [t for t in all_tools if t.name not in already_used]
+    print(f"Tools already used: {already_used}")
+    print(f"Tools remaining: {[t.name for t in remaining_tools]}")
+
+    # Safety net: the loop's edge logic should stop calling this node once
+    # actions run out, but guard here too in case it's ever reached anyway.
+    if not remaining_tools:
+        print("No remaining tools — returning early")
+        return {
+            "findings": ["No remaining evidence sources to check."],
+        }
+
+    action_llm = llm.bind_tools(remaining_tools, tool_choice="any")
+
+    messages = EVIDENCE_GATHERER_PROMPT.invoke({
+        "belief_state": state.get("belief_state") or "No belief state yet",
+        "findings": state.get("findings") or "No evidence yet",
+    })
+    print("Calling LLM to select a tool...")
+    response = action_llm.invoke(messages)
+    print("LLM Response Received...")
+
+    # tool_choice="any" forces at least one call; we only act on the first
+    tool_call = response.tool_calls[0]
+    chosen_tool = next(t for t in remaining_tools if t.name == tool_call["name"])
+    print(f"Chosen tool: {chosen_tool.name}, args: {tool_call['args']}")
+
+    print("Invoking tool...")
+    raw_evidence = chosen_tool.invoke(tool_call["args"])
+    print(f"Raw evidence retrieved: {len(raw_evidence)} records")
+
+    summary_messages = EVIDENCE_SUMMARY_PROMPT.invoke({
+        "hypothesis": state.get("belief_state").selected_hypothesis if state.get("belief_state") else "None yet",
+        "tool_name": chosen_tool.name,
+        "evidence": raw_evidence,
+    })
+    print("Calling LLM to summarize evidence...")
+    summary = evidence_summary_llm.invoke(summary_messages)
+    print("Summary:", summary.summary)
+    print("Returning from evidence_gatherer node...")
+
+    return {
+        "past_actions": [chosen_tool.name],
+        "evidence_log": [{"tool": chosen_tool.name, "records": raw_evidence}],
+        "findings": [summary.summary],
+    }
+
+def evidence_assessor(state: InvestigatorState) -> dict:
+    """
+    This node assesses the evidence gathered so far and determines whether it is sufficient to reach a conclusion
+    about the incident's root cause. It uses the LLM to evaluate the evidence and provide a conclusion."""
+    print("Inside evidence_assessor node...")
+    messages = EVIDENCE_ASSESSOR_PROMPT.invoke({
+        "operational_memory": state.get("operational_memory", "No operational memory provided"),
+        "query": state["query"],
+        "belief_state": state.get("belief_state") or "No belief state yet",
+        "findings": state.get("findings") or "No evidence yet",
+        "past_actions": state.get("past_actions") or "No actions taken yet",
+    })
+    print("Calling LLM...")
+    conclusion: Conclusion = evidence_assessor_llm.invoke(messages)
+    print("LLM Response Received...")
+    print(f"Conclusive: {conclusion.conclusive}")
+    print(f"Root cause: {conclusion.root_cause}")
+    print(f"Confidence: {conclusion.confidence}")
+    print("Returning from evidence_assessor node...")
+
+    return {
+        "conclusion": conclusion,
+    }
+
+def generate_report(state: InvestigatorState) -> dict:
+    """
+    Placeholder — will synthesize belief_state, conclusion, and findings
+    into a final written report. For now just echoes the conclusion.
+    """
+    print("Inside generate_report node...")
+    conclusion = state.get("conclusion")
+    print(f"Generating report, conclusion present: {conclusion is not None}")
+    print("Returning from generate_report node...")
+    return {
+        "final_report": f"[DUMMY REPORT] {conclusion.root_cause if conclusion else 'No conclusion reached.'}",
     }

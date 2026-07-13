@@ -113,3 +113,129 @@ PLANNER_PROMPT = ChatPromptTemplate.from_messages(
         ),
     ]
 )
+
+EVIDENCE_GATHERER_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            You are the evidence-gathering agent for SentinelOps.
+
+            You will be given the current belief state (the hypothesis being investigated)
+            and the evidence gathered so far. You have a set of tools available — each one
+            fetches a different category of evidence about the incident.
+
+            Choose exactly ONE tool to call: whichever will best help confirm or rule out
+            the current hypothesis, given what's already been gathered. Do not call a tool
+            that would return evidence you already effectively have.
+            """
+        ),
+        (
+            "human",
+            """
+            ## Current Belief State
+
+            {belief_state}
+
+            ---
+
+            ## Evidence Gathered So Far
+
+            {findings}
+            """
+        ),
+    ]
+)
+
+EVIDENCE_SUMMARY_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            You are summarizing raw evidence gathered during an incident investigation.
+
+            Given the current hypothesis and a raw evidence payload, write a concise
+            summary of what this evidence shows. Note explicitly whether it supports,
+            contradicts, or is neutral to the hypothesis. Do not speculate beyond what
+            the evidence actually contains.
+            """
+        ),
+        (
+            "human",
+            """
+            ## Current Hypothesis
+
+            {hypothesis}
+
+            ---
+
+            ## Raw Evidence ({tool_name})
+
+            {evidence}
+            """
+        ),
+    ]
+)
+
+EVIDENCE_ASSESSOR_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            You are the evidence assessor for SentinelOps.
+
+            Your job is to determine whether the evidence gathered so far is sufficient
+            to explain the root cause of the incident described in the user query. You
+            are NOT responsible for gathering more evidence or deciding what to check
+            next — that is handled elsewhere.
+
+            You will be given company operational memory, the user query, the current
+            belief state, the evidence summaries gathered so far, and the actions
+            already taken.
+
+            Mark conclusive=True only if the evidence establishes a causal chain that
+            actually explains the incident — not just a single anomalous metric. A
+            symptom (e.g. "latency increased") is not a root cause. If the evidence
+            shows a clear mechanism (e.g. "a config change combined with a traffic
+            increase overloaded a specific component"), and that mechanism is grounded
+            in what you were told about the company's architecture, mark it conclusive.
+
+            If evidence is contradictory, incomplete, or only shows symptoms without an
+            underlying cause, mark conclusive=False, and clearly state what's still
+            missing in remaining_uncertainty so the investigation can decide what to
+            check next.
+
+            Always provide your best current root_cause explanation, even when not
+            conclusive — this will be used to guide further investigation and, if the
+            investigation runs out of time, as the basis of a best-effort report.
+            """
+        ),
+        (
+            "human",
+            """
+            ## Company Operational Memory
+            {operational_memory}
+
+            ---
+
+            ## User Query
+            {query}
+
+            ---
+
+            ## Current Belief State
+            {belief_state}
+
+            ---
+
+            ## Evidence Summaries
+            {findings}
+
+            ---
+
+            ## Actions Taken So Far
+            {past_actions}
+            """
+        ),
+    ]
+)
