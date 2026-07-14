@@ -5,6 +5,8 @@ from backend.agent.schemas import TimeRange, BeliefState, EvidenceSummary, Concl
 llm = ChatOllama(
     model="qwen3:4b",
     temperature=0,
+    num_ctx=8192,
+    keep_alive='0s'
 )
 
 time_range_llm = llm.with_structured_output(TimeRange)

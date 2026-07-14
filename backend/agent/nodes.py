@@ -1,9 +1,13 @@
 from datetime import datetime
+import json
 
 from backend.agent.tools import build_tools
 from backend.agent.llms import llm, time_range_llm, planner_llm, evidence_summary_llm, evidence_assessor_llm
 from backend.agent.schemas import BeliefState, InvestigatorState, Conclusion
 from backend.agent.prompts import TIME_RANGE_PROMPT, PLANNER_PROMPT, EVIDENCE_GATHERER_PROMPT, EVIDENCE_SUMMARY_PROMPT, EVIDENCE_ASSESSOR_PROMPT
+from backend.agent.utils import _refine_summarize
+
+CHUNK_THRESHOLD = 50
 
 def route_after_assessment(state: InvestigatorState) -> str:
     print("Inside route_after_assessment...")
@@ -130,21 +134,29 @@ def evidence_gatherer(state: InvestigatorState) -> dict:
     print("Invoking tool...")
     raw_evidence = chosen_tool.invoke(tool_call["args"])
     print(f"Raw evidence retrieved: {len(raw_evidence)} records")
-
-    summary_messages = EVIDENCE_SUMMARY_PROMPT.invoke({
-        "hypothesis": state.get("belief_state").selected_hypothesis if state.get("belief_state") else "None yet",
-        "tool_name": chosen_tool.name,
-        "evidence": raw_evidence,
-    })
     print("Calling LLM to summarize evidence...")
-    summary = evidence_summary_llm.invoke(summary_messages)
-    print("Summary:", summary.summary)
+    if len(raw_evidence) > CHUNK_THRESHOLD:
+        print("Evidence exceeds chunk threshold, using refine summarization...")
+        summary_text = _refine_summarize(
+            tool_name=chosen_tool.name,
+            hypothesis=state.get("belief_state").selected_hypothesis if state.get("belief_state") else "None yet",
+            raw_evidence=raw_evidence,
+            chunk_size=CHUNK_THRESHOLD,
+        )
+    else:
+        print("Evidence within chunk threshold, using single-pass summarization...")
+        summary_messages = EVIDENCE_SUMMARY_PROMPT.invoke({
+            "hypothesis": state.get("belief_state").selected_hypothesis if state.get("belief_state") else "None yet",
+            "tool_name": chosen_tool.name,
+            "evidence": json.dumps(raw_evidence, default=str),
+        })
+        summary_text = evidence_summary_llm.invoke(summary_messages).summary
+    print("Calling LLM to summarize evidence...")
     print("Returning from evidence_gatherer node...")
-
     return {
         "past_actions": [chosen_tool.name],
         "evidence_log": [{"tool": chosen_tool.name, "records": raw_evidence}],
-        "findings": [summary.summary],
+        "findings": [summary_text],
     }
 
 def evidence_assessor(state: InvestigatorState) -> dict:

@@ -239,3 +239,49 @@ EVIDENCE_ASSESSOR_PROMPT = ChatPromptTemplate.from_messages(
         ),
     ]
 )
+
+EVIDENCE_REFINE_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            You are incrementally building a summary of time-series evidence for an
+            incident investigation, one chronological chunk at a time.
+
+            You will be given the summary built so far (from earlier, older records)
+            and a new chunk of records that come immediately after those chronologically.
+
+            Update the running summary to incorporate the new chunk. Preserve anything
+            from the running summary that is still relevant. Note any changes in trend,
+            new anomalies, or events that appear in this new chunk. If the new chunk is
+            consistent with the existing trend, say so briefly rather than repeating
+            details already captured.
+
+            Keep the updated summary concise — this is a rolling summary, not a
+            transcript. Do not speculate beyond what the records show.
+            """
+        ),
+        (
+            "human",
+            """
+            ## Current Hypothesis
+            {hypothesis}
+
+            ---
+
+            ## Source
+            {tool_name}
+
+            ---
+
+            ## Running Summary So Far
+            {running_summary}
+
+            ---
+
+            ## New Chunk (records {chunk_start}-{chunk_end} of {total_records})
+            {chunk}
+            """
+        ),
+    ]
+)
