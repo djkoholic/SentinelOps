@@ -193,17 +193,34 @@ EVIDENCE_ASSESSOR_PROMPT = ChatPromptTemplate.from_messages(
             belief state, the evidence summaries gathered so far, and the actions
             already taken.
 
-            Mark conclusive=True only if the evidence establishes a causal chain that
-            actually explains the incident — not just a single anomalous metric. A
-            symptom (e.g. "latency increased") is not a root cause. If the evidence
-            shows a clear mechanism (e.g. "a config change combined with a traffic
-            increase overloaded a specific component"), and that mechanism is grounded
-            in what you were told about the company's architecture, mark it conclusive.
+            Be skeptical by default. A single piece of evidence is almost never enough
+            to conclude an investigation, even if it looks like a strong lead. Before
+            marking conclusive=True, verify ALL of the following:
 
-            If evidence is contradictory, incomplete, or only shows symptoms without an
-            underlying cause, mark conclusive=False, and clearly state what's still
-            missing in remaining_uncertainty so the investigation can decide what to
-            check next.
+            1. The evidence demonstrates ACTUAL IMPACT, not just a plausible contributing
+               factor. A deployment or config change log entry shows something happened —
+               it does NOT by itself show that change caused the incident. You need
+               corroborating evidence (e.g. metrics or alerts) that shows the system was
+               actually degraded as a consequence, in a way that lines up with the
+               timeline.
+            2. The mechanism is corroborated by evidence from more than one distinct
+               source in past_actions. If only one action has been taken so far, evidence
+               is almost certainly insufficient — say so explicitly and mark
+               conclusive=False, regardless of how compelling that single finding looks.
+            3. You have considered whether anything in past_actions rules OUT the current
+               hypothesis, not just whether something supports it.
+            4. No major category of evidence relevant to this kind of incident (traffic
+               patterns, infrastructure metrics, alerts, logs, deployments) has gone
+               unchecked without good reason. If a source that seems obviously relevant
+               hasn't been checked yet, that is itself a reason to mark conclusive=False.
+
+            A symptom or a single change log is not a root cause. Only mark
+            conclusive=True when you have evidence of both a triggering factor AND its
+            measurable impact, corroborated by multiple independent sources.
+
+            If evidence is contradictory, incomplete, single-sourced, or only shows part
+            of the picture, mark conclusive=False, and clearly state what's still missing
+            in remaining_uncertainty so the investigation can decide what to check next.
 
             Always provide your best current root_cause explanation, even when not
             conclusive — this will be used to guide further investigation and, if the
@@ -233,7 +250,7 @@ EVIDENCE_ASSESSOR_PROMPT = ChatPromptTemplate.from_messages(
 
             ---
 
-            ## Actions Taken So Far
+            ## Actions Taken So Far ({num_actions} of {total_tools} available sources checked)
             {past_actions}
             """
         ),

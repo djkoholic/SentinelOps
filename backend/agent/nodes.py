@@ -160,28 +160,19 @@ def evidence_gatherer(state: InvestigatorState) -> dict:
     }
 
 def evidence_assessor(state: InvestigatorState) -> dict:
-    """
-    This node assesses the evidence gathered so far and determines whether it is sufficient to reach a conclusion
-    about the incident's root cause. It uses the LLM to evaluate the evidence and provide a conclusion."""
     print("Inside evidence_assessor node...")
+    all_tools = build_tools(state["start_time"], state["end_time"])
+    past_actions = state.get("past_actions", [])
+
     messages = EVIDENCE_ASSESSOR_PROMPT.invoke({
         "operational_memory": state.get("operational_memory", "No operational memory provided"),
         "query": state["query"],
         "belief_state": state.get("belief_state") or "No belief state yet",
         "findings": state.get("findings") or "No evidence yet",
-        "past_actions": state.get("past_actions") or "No actions taken yet",
+        "past_actions": past_actions or "No actions taken yet",
+        "num_actions": len(past_actions),
+        "total_tools": len(all_tools),
     })
-    print("Calling LLM...")
-    conclusion: Conclusion = evidence_assessor_llm.invoke(messages)
-    print("LLM Response Received...")
-    print(f"Conclusive: {conclusion.conclusive}")
-    print(f"Root cause: {conclusion.root_cause}")
-    print(f"Confidence: {conclusion.confidence}")
-    print("Returning from evidence_assessor node...")
-
-    return {
-        "conclusion": conclusion,
-    }
 
 def generate_report(state: InvestigatorState) -> dict:
     """

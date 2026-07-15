@@ -3,7 +3,7 @@ from langchain_ollama import ChatOllama
 from backend.agent.schemas import TimeRange, BeliefState, EvidenceSummary, Conclusion
 
 llm = ChatOllama(
-    model="qwen3:4b",
+    model="qwen3:8b",
     temperature=0,
     num_ctx=8192,
     keep_alive='0s'
