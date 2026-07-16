@@ -51,14 +51,14 @@ class InvestigatorState(TypedDict, total=False):
 
     # accumulating: `add` reducer appends instead of replacing
     hypothesis_history: Annotated[list[Hypothesis], add]
-    past_actions: Annotated[list[str], add]
+    past_actions: Annotated[list[dict], add]   # now {"tool": str, "args": dict} instead of bare str
     evidence_log: Annotated[list[dict], add]
     findings: Annotated[list[str], add]
 
     # loop control
-    available_actions: list[str]
     iteration_count: int
     max_iterations: int
+    max_actions: int   # NEW — total evidence-gathering calls allowed, since tool+args combos are unbounded
 
     # output
     final_report: str

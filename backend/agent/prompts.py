@@ -134,14 +134,21 @@ EVIDENCE_GATHERER_PROMPT = ChatPromptTemplate.from_messages(
             "human",
             """
             ## Current Belief State
-
             {belief_state}
 
             ---
 
             ## Evidence Gathered So Far
-
             {findings}
+
+            ---
+
+            ## Actions Already Taken (tool + filters used)
+            {past_actions}
+
+            Note: you may call the same tool again with DIFFERENT filters if that would
+            surface new evidence. Do not repeat the exact same tool with the exact same
+            filters — that has already been checked and won't yield anything new.
             """
         ),
     ]
