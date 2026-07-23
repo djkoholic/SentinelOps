@@ -30,11 +30,20 @@ class EvidenceSummary(BaseModel):
     supports_hypothesis: bool = Field(description="Whether this evidence supports the current hypothesis")
 
 class Conclusion(BaseModel):
-    conclusive: bool = Field(description="True if evidence gathered so far is sufficient to explain the incident's root cause")
-    root_cause: str = Field(description="Best current explanation of what happened, even if not yet conclusive — state your best understanding given available evidence")
-    reasoning: str = Field(description="Why this evidence is or isn't sufficient to be conclusive")
+    conclusive: bool = Field(description="True only if evidence supports a specific, actionable fix that addresses the actual cause")
+    root_cause: str = Field(description="Best current explanation of what happened, even if not yet conclusive")
+    recommended_fix: str = Field(description="A specific, actionable remediation. Must name a concrete action tied to a specific cause found in evidence — e.g. 'disable the newly enabled retry-on-timeout setting in the auth-service client' — NOT a generic mitigation like 'scale up the service' or 'restart the pods', which could be proposed without knowing the actual cause")
+    fix_is_specific: bool = Field(description="True only if recommended_fix targets a specific identified cause (a config change, a specific traffic source, a specific saturated dependency). False if the fix is generic infrastructure scaling/restarting that doesn't require knowing what actually happened")
+    reasoning: str = Field(description="Why this evidence is or isn't sufficient, and why the fix is or isn't specific")
     confidence: float = Field(ge=0.0, le=1.0)
-    remaining_uncertainty: str = Field(description="What is still unknown or unverified, if not conclusive. Empty string if conclusive.")
+    remaining_uncertainty: str = Field(description="What is still unknown. Empty string if conclusive.")
+
+class InvestigationReport(BaseModel):
+    summary: str = Field(description="A concise narrative summary of the incident and what the investigation found")
+    root_cause: str = Field(description="The identified or best-current-understanding root cause")
+    recommended_fix: str = Field(description="Concrete action(s) to mitigate or resolve the issue, based on the root cause identified")
+    status: Literal["conclusive", "inconclusive"]
+    caveats: str = Field(description="What remains uncertain or unverified. Empty string if fully conclusive.")
 
 # ---------- Graph state ----------
 
@@ -61,4 +70,4 @@ class InvestigatorState(TypedDict, total=False):
     max_actions: int   # NEW — total evidence-gathering calls allowed, since tool+args combos are unbounded
 
     # output
-    final_report: str
+    final_report: InvestigationReport

@@ -2,9 +2,9 @@ from datetime import datetime
 import json
 
 from backend.agent.tools import build_tools
-from backend.agent.llms import llm, time_range_llm, planner_llm, evidence_summary_llm, evidence_assessor_llm
-from backend.agent.schemas import BeliefState, InvestigatorState, Conclusion
-from backend.agent.prompts import TIME_RANGE_PROMPT, PLANNER_PROMPT, EVIDENCE_GATHERER_PROMPT, EVIDENCE_SUMMARY_PROMPT, EVIDENCE_ASSESSOR_PROMPT
+from backend.agent.llms import llm, time_range_llm, planner_llm, evidence_summary_llm, evidence_assessor_llm, report_llm
+from backend.agent.schemas import BeliefState, InvestigatorState, Conclusion, InvestigationReport
+from backend.agent.prompts import TIME_RANGE_PROMPT, PLANNER_PROMPT, EVIDENCE_GATHERER_PROMPT, EVIDENCE_SUMMARY_PROMPT, EVIDENCE_ASSESSOR_PROMPT, REPORT_PROMPT
 from backend.agent.utils import _refine_summarize
 
 CHUNK_THRESHOLD = 50
@@ -85,9 +85,20 @@ def route_after_assessment(state: InvestigatorState) -> str:
     past_actions = state.get("past_actions", [])
     max_actions = state.get("max_actions", 8)
 
+    MIN_ACTIONS_BEFORE_CONCLUSIVE = 2
+
     print(f"Conclusive: {conclusion.conclusive if conclusion else None}")
+    print(f"Fix specific: {conclusion.fix_is_specific if conclusion else None}")
     print(f"Iteration count: {iteration_count}/{max_iterations}")
     print(f"Actions taken: {len(past_actions)}/{max_actions}")
+
+    if conclusion and conclusion.conclusive and len(past_actions) < MIN_ACTIONS_BEFORE_CONCLUSIVE:
+        print(f"LLM marked conclusive but only {len(past_actions)} action(s) taken — overriding, continuing investigation")
+        return "planner"
+
+    if conclusion and conclusion.conclusive and not conclusion.fix_is_specific:
+        print("LLM marked conclusive but fix is not specific — overriding, continuing investigation")
+        return "planner"
 
     if conclusion and conclusion.conclusive:
         print("Routing to generate_report (conclusive)")
@@ -203,13 +214,29 @@ def evidence_assessor(state: InvestigatorState) -> dict:
 
 def generate_report(state: InvestigatorState) -> dict:
     """
-    Placeholder — will synthesize belief_state, conclusion, and findings
-    into a final written report. For now just echoes the conclusion.
+    Synthesizes belief_state, hypothesis_history, findings, and the final conclusion
+    into a polished investigation report — whether or not the investigation reached
+    a conclusive result.
     """
     print("Inside generate_report node...")
     conclusion = state.get("conclusion")
-    print(f"Generating report, conclusion present: {conclusion is not None}")
+
+    messages = REPORT_PROMPT.invoke({
+        "query": state["query"],
+        "hypothesis_history": state.get("hypothesis_history") or "None considered",
+        "findings": state.get("findings") or "No evidence gathered",
+        "conclusive": conclusion.conclusive if conclusion else False,
+        "root_cause": conclusion.root_cause if conclusion else "Unknown — no conclusion reached",
+        "recommended_fix": conclusion.recommended_fix if conclusion else "N/A",
+        "reasoning": conclusion.reasoning if conclusion else "N/A",
+        "remaining_uncertainty": conclusion.remaining_uncertainty if conclusion else "Investigation did not reach an assessment",
+    })
+    print("Calling LLM to generate report...")
+    report: InvestigationReport = report_llm.invoke(messages)
+    print("Report status:", report.status)
+    print("Root cause:", report.root_cause)
     print("Returning from generate_report node...")
+
     return {
-        "final_report": f"[DUMMY REPORT] {conclusion.root_cause if conclusion else 'No conclusion reached.'}",
+        "final_report": report,
     }

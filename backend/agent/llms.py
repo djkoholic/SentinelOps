@@ -1,6 +1,6 @@
 from langchain_ollama import ChatOllama
 
-from backend.agent.schemas import TimeRange, BeliefState, EvidenceSummary, Conclusion
+from backend.agent.schemas import TimeRange, BeliefState, EvidenceSummary, Conclusion, InvestigationReport
 
 llm = ChatOllama(
     model="qwen3:8b",
@@ -16,3 +16,5 @@ planner_llm = llm.with_structured_output(BeliefState)
 evidence_summary_llm = llm.with_structured_output(EvidenceSummary)
 
 evidence_assessor_llm = llm.with_structured_output(Conclusion)
+
+report_llm = llm.with_structured_output(InvestigationReport)

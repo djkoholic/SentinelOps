@@ -200,38 +200,31 @@ EVIDENCE_ASSESSOR_PROMPT = ChatPromptTemplate.from_messages(
             belief state, the evidence summaries gathered so far, and the actions
             already taken.
 
-            Be skeptical by default. A single piece of evidence is almost never enough
-            to conclude an investigation, even if it looks like a strong lead. Before
-            marking conclusive=True, verify ALL of the following:
+            Your primary test is not "does the evidence support a hypothesis" but
+            "could I write a SPECIFIC, actionable fix from this evidence." For example,
+            a fix like "scale up the affected service" or "restart the affected pods" is
+            generic — it could be proposed the moment degraded performance is observed,
+            without any real investigation, and does not require knowing what actually
+            happened. It does not count as a valid fix.
 
-            1. The evidence demonstrates ACTUAL IMPACT, not just a plausible contributing
-               factor. A deployment or config change log entry shows something happened —
-               it does NOT by itself show that change caused the incident. You need
-               corroborating evidence (e.g. metrics or alerts) that shows the system was
-               actually degraded as a consequence, in a way that lines up with the
-               timeline.
-            2. The mechanism is corroborated by evidence from more than one distinct
-               source in past_actions. If only one action has been taken so far, evidence
-               is almost certainly insufficient — say so explicitly and mark
-               conclusive=False, regardless of how compelling that single finding looks.
-            3. You have considered whether anything in past_actions rules OUT the current
-               hypothesis, not just whether something supports it.
-            4. No major category of evidence relevant to this kind of incident (traffic
-               patterns, infrastructure metrics, alerts, logs, deployments) has gone
-               unchecked without good reason. If a source that seems obviously relevant
-               hasn't been checked yet, that is itself a reason to mark conclusive=False.
+            A specific fix names a concrete cause: a particular deployment or config
+            change to revert, a particular traffic source to throttle, a particular
+            downstream dependency that was saturated and needs remediation. For example,
+            "disable the newly enabled retry-on-timeout setting in the auth-service
+            client" is specific — it names an exact change tied to evidence. If you
+            cannot write a fix like that yet, you do not have enough evidence, no matter
+            how confident you are that some component was "overloaded" or "degraded" —
+            that is a description of the symptom, not something you can act on.
 
-            A symptom or a single change log is not a root cause. Only mark
-            conclusive=True when you have evidence of both a triggering factor AND its
-            measurable impact, corroborated by multiple independent sources.
+            Mark conclusive=True only when recommended_fix is specific in this sense
+            (fix_is_specific=True). If your best fix right now is still generic, mark
+            conclusive=False, set fix_is_specific=False, and use remaining_uncertainty
+            to say what kind of evidence (recent changes, upstream dependencies, traffic
+            patterns) would let you find the specific cause.
 
-            If evidence is contradictory, incomplete, single-sourced, or only shows part
-            of the picture, mark conclusive=False, and clearly state what's still missing
-            in remaining_uncertainty so the investigation can decide what to check next.
-
-            Always provide your best current root_cause explanation, even when not
-            conclusive — this will be used to guide further investigation and, if the
-            investigation runs out of time, as the basis of a best-effort report.
+            Always provide your best current root_cause and recommended_fix, even when
+            not conclusive — this will be used to guide further investigation and, if
+            the investigation runs out of time, as the basis of a best-effort report.
             """
         ),
         (
@@ -305,6 +298,69 @@ EVIDENCE_REFINE_PROMPT = ChatPromptTemplate.from_messages(
 
             ## New Chunk (records {chunk_start}-{chunk_end} of {total_records})
             {chunk}
+            """
+        ),
+    ]
+)
+
+REPORT_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            You are an AI Reliability Engineer writing the final report for a production
+            incident investigation.
+
+            You will be given the user's original query, the hypotheses considered during
+            the investigation, the evidence findings gathered, and the investigation's
+            final conclusion (which states whether it was conclusive, its best-current
+            root cause explanation, the reasoning behind it, and what remains uncertain
+            if any).
+
+            Write a clear, professional report based on all of this:
+
+            - "summary" should narrate what happened during the incident and what the
+              investigation did, in plain language a reliability engineer or their
+              manager could read without needing the raw evidence.
+            - "root_cause" should state the root cause as identified. If the
+              investigation was inconclusive, state the most likely explanation while
+              being clear it is not fully confirmed.
+            - "recommended_fix" should propose concrete, actionable remediation based on
+              the root cause. If inconclusive, recommend what should be investigated or
+              monitored next to reach a conclusion, rather than a definitive fix.
+            - "status" should be "conclusive" only if the conclusion provided says so.
+            - "caveats" should state what remains unverified or uncertain. Leave this as
+              an empty string only if status is "conclusive" and there is genuinely
+              nothing left in question.
+
+            Do not overstate confidence. If the conclusion was inconclusive, the report
+            should read as an honest best-effort summary, not a confident finding.
+            """
+        ),
+        (
+            "human",
+            """
+            ## User Query
+            {query}
+
+            ---
+
+            ## Hypotheses Considered
+            {hypothesis_history}
+
+            ---
+
+            ## Evidence Findings
+            {findings}
+
+            ---
+
+            ## Final Conclusion
+            Conclusive: {conclusive}
+            Root cause (best current understanding): {root_cause}
+            Recommended fix (from investigation): {recommended_fix}
+            Reasoning: {reasoning}
+            Remaining uncertainty: {remaining_uncertainty}
             """
         ),
     ]
