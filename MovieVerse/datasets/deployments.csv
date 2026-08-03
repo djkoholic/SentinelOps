@@ -1,0 +1,6 @@
+,timestamp,service,version,event,description
+0,2026-06-29 17:15:00,recommendation-api,v2.1,Recommendation Model v2.1 deployed,Promoted core model weights to pipeline serving instance layer.
+1,2026-06-29 17:15:12,recommendation-cache,v2.1-config,Cache TTL updated,Reduced feature cache refresh interval from 12 hours to 2 hours to optimize feature freshness.
+2,2026-06-29 17:45:00,mobile-client-app,v5.4,Mobile app rollout progressive increase,Phased delivery node capacity bump targeting 25% rollout pool.
+3,2026-06-29 21:00:00,recommendation-cache,v2.1-rollback-config,Cache TTL restored,Emergency hotfix rollback restoring TTL capacity back to 12 hours.
+4,2026-06-29 21:01:30,recommendation-api,v2.1-throttling,Configuration changes,Enabled API gateway rate-limiting constraints to clip mobile client v5.4 bursts.

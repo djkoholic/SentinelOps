@@ -46,6 +46,7 @@ body {
   }
 }
 
+
 /* Report formatting */
 .report-section {
   @apply mb-6 pb-6 border-b border-slate-700;
@@ -73,4 +74,83 @@ body {
 
 .report-content {
   @apply text-slate-300 leading-relaxed;
+}
+
+/* Thinking process panel (collapsed status + expandable log) */
+.thinking-panel {
+  @apply bg-slate-900/30 border border-slate-800 rounded-lg mb-8 overflow-hidden;
+}
+
+.thinking-header {
+  @apply w-full flex items-center justify-between px-5 py-4 bg-transparent border-none cursor-pointer text-left text-inherit;
+}
+
+.thinking-status {
+  @apply flex items-center gap-2.5 min-w-0;
+}
+
+.thinking-text {
+  @apply text-slate-300 text-sm whitespace-nowrap overflow-hidden text-ellipsis;
+  animation: fade-in 0.3s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.thinking-dot {
+  @apply w-2 h-2 rounded-full bg-blue-400 flex-shrink-0;
+  animation: thinking-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.thinking-toggle {
+  @apply flex items-center gap-1.5 text-xs text-slate-400 flex-shrink-0;
+}
+
+.chevron {
+  transition: transform 0.2s ease;
+}
+
+.chevron-up {
+  transform: rotate(180deg);
+}
+
+.thinking-log {
+  @apply border-t border-slate-800 px-5 py-2 overflow-y-auto;
+  max-height: 300px;
+}
+
+.thinking-log-item {
+  @apply flex gap-3 py-2 border-b border-slate-800/50 text-sm;
+}
+
+.thinking-log-item:last-child {
+  @apply border-b-0;
+}
+
+.thinking-log-type {
+  @apply text-blue-400 uppercase text-xs font-semibold tracking-wide flex-shrink-0;
+  padding-top: 0.1rem;
+}
+
+.thinking-log-message {
+  @apply text-slate-300;
 }
