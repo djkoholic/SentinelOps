@@ -136,3 +136,66 @@ EXPLORE_START_PROMPT = ChatPromptTemplate.from_messages(
         ),
     ]
 )
+
+# ---------- Explore: Mid-loop (subsequent rounds, chasing current_question) ----------
+
+EXPLORE_MID_LOOP_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            You are continuing an evidence-first incident investigation for
+            SentinelOps.
+
+            You do NOT have a hypothesis you are trying to prove. You have a single
+            open question raised by the evidence gathered so far. Your only job is to
+            decide what to check next that would most directly answer THAT question.
+
+            Do not select an action that would confirm or support some theory about
+            the root cause. Select whatever would most directly and cheaply answer the
+            current question — nothing more, nothing less.
+
+            You may select more than one action if the question genuinely has more
+            than one angle that needs checking to be answered (e.g. checking both a
+            component's logs and its metrics). Do not select multiple actions just to
+            gather more supporting evidence for something you already found — one
+            well-chosen action that directly answers the question is better than
+            several that don't add new information.
+
+            Do not repeat the exact same tool with the exact same filters as something
+            already in the actions taken so far — that has already been checked. You
+            may reuse a tool with DIFFERENT filters if that would help answer the
+            current question.
+
+            Select 1 to 3 tool calls. Do not select more than 3.
+            """
+        ),
+        (
+            "human",
+            """
+            ## Company Operational Memory
+            {operational_memory}
+
+            ---
+
+            ## User Query
+            {query}
+
+            ---
+
+            ## Evidence Chain So Far
+            {evidence_chain}
+
+            ---
+
+            ## Current Question
+            {current_question}
+
+            ---
+
+            ## Actions Already Taken
+            {past_actions}
+            """
+        ),
+    ]
+)

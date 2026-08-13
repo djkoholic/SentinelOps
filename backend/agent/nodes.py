@@ -3,7 +3,8 @@ from datetime import datetime
 from backend.agent.tools import build_tools
 from backend.agent.llms import llm, time_range_llm
 from backend.agent.schemas import InvestigatorState
-from backend.agent.prompts import TIME_RANGE_PROMPT, EXPLORE_START_PROMPT
+from backend.agent.prompts import TIME_RANGE_PROMPT, EXPLORE_START_PROMPT, EXPLORE_MID_LOOP_PROMPT
+from backend.agent.utils import _format_evidence_chain, _format_past_actions
 
 MAX_FANOUT_TARGETS = 3
 
@@ -75,6 +76,45 @@ def explore_start(state: InvestigatorState) -> dict:
         print(f"  - {t['tool']}({t['args']})")
 
     print("Returning from explore_start node...")
+    return {
+        "explore_targets": explore_targets,
+    }
+
+def explore_mid_loop(state: InvestigatorState) -> dict:
+    """
+    Subsequent-round exploration. Chases state["current_question"] — the
+    single open "why" raised by the most recent integrate step — rather
+    than reasoning about any hypothesis. Unlike explore_start, this node
+    has the full evidence_chain and past_actions to work from.
+    """
+    print("Inside explore_mid_loop node...")
+    all_tools = build_tools(state["start_time"], state["end_time"])
+
+    explore_llm = llm.bind_tools(all_tools, tool_choice="any")
+
+    messages = EXPLORE_MID_LOOP_PROMPT.invoke({
+        "operational_memory": state.get("operational_memory", "No operational memory provided"),
+        "query": state["query"],
+        "evidence_chain": _format_evidence_chain(state.get("evidence_chain", [])),
+        "current_question": state.get("current_question") or "No specific question yet",
+        "past_actions": _format_past_actions(state.get("past_actions", [])),
+    })
+    print(f"Current question being chased: {state.get('current_question')}")
+    print("Calling LLM to select targets...")
+    response = explore_llm.invoke(messages)
+    print("LLM Response Received...")
+
+    tool_calls = response.tool_calls[:MAX_FANOUT_TARGETS]
+    explore_targets = [
+        {"tool": tc["name"], "args": tc["args"]}
+        for tc in tool_calls
+    ]
+
+    print(f"Selected {len(explore_targets)} target(s):")
+    for t in explore_targets:
+        print(f"  - {t['tool']}({t['args']})")
+
+    print("Returning from explore_mid_loop node...")
     return {
         "explore_targets": explore_targets,
     }

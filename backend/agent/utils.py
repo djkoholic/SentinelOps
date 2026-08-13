@@ -1,6 +1,28 @@
 from pathlib import Path
 import json
 
+def _format_evidence_chain(evidence_chain: list) -> str:
+    if not evidence_chain:
+        return "No evidence gathered yet"
+    lines = []
+    for i, step in enumerate(evidence_chain, 1):
+        marker = "[ACTIONABLE]" if step.is_actionable_cause else ""
+        lines.append(f"{i}. {step.observation} {marker}")
+        if step.raised_question:
+            lines.append(f"   → raised question: {step.raised_question}")
+    return "\n".join(lines)
+
+
+def _format_past_actions(past_actions: list[dict]) -> str:
+    if not past_actions:
+        return "No actions taken yet"
+    lines = []
+    for pa in past_actions:
+        args = pa.get("args") or {}
+        args_str = ", ".join(f"{k}={v}" for k, v in args.items()) or "no filters"
+        lines.append(f"- {pa['tool']}({args_str})")
+    return "\n".join(lines)
+
 def _load_markdown(path, headings=['1. Product Overview', '2. Core Components', '3. Critical User Flows']):
     text = Path(path).read_text(encoding="utf-8").splitlines()
 
