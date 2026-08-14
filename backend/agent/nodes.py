@@ -1,4 +1,5 @@
 from datetime import datetime
+from langgraph.types import Send
 
 from backend.agent.tools import build_tools
 from backend.agent.llms import llm, time_range_llm
@@ -118,3 +119,44 @@ def explore_mid_loop(state: InvestigatorState) -> dict:
     return {
         "explore_targets": explore_targets,
     }
+
+def _already_called(past_actions: list[dict]) -> set[tuple]:
+    """Set of (tool, sorted-args-tuple) pairs already executed — used to
+    filter out exact duplicates before they're even sent to gather."""
+    return {
+        (pa["tool"], tuple(sorted((pa.get("args") or {}).items())))
+        for pa in past_actions
+    }
+
+
+def fan_out_to_gather(state: InvestigatorState) -> list[Send]:
+    """
+    Takes the targets selected by explore_start or explore_mid_loop, drops
+    any that exactly duplicate a past action, and dispatches them as ONE
+    Send carrying the full target list — gather executes them sequentially
+    inside a single node run rather than as true concurrent branches. This
+    is a deliberate hardware-driven choice: the local Ollama instance
+    cannot safely serve multiple simultaneous inference calls (see the
+    OOM/memory investigation in prior iterations). The targets remain
+    logically parallel — none depends on another's result, all answer the
+    same current_question together — they are just executed one at a time.
+    """
+    targets = state.get("explore_targets", [])
+    already_called = _already_called(state.get("past_actions", []))
+
+    deduped_targets = []
+    for t in targets:
+        key = (t["tool"], tuple(sorted((t.get("args") or {}).items())))
+        if key in already_called:
+            print(f"Skipping duplicate target: {t['tool']}({t['args']}) — already checked")
+            continue
+        deduped_targets.append(t)
+
+    print(f"Fanning out to gather with {len(deduped_targets)} target(s) (sequential execution):")
+    for t in deduped_targets:
+        print(f"  - {t['tool']}({t['args']})")
+
+    if not deduped_targets:
+        print("No new targets after deduplication — dispatching empty batch")
+
+    return [Send("gather", {**state, "targets": deduped_targets})]
