@@ -42,7 +42,6 @@ class InvestigationReport(BaseModel):
     status: Literal["conclusive", "inconclusive"]
     caveats: str = Field(description="What remains uncertain or unverified. Empty string if fully conclusive.")
 
-
 # ---------- Graph state ----------
 
 class InvestigatorState(TypedDict, total=False):
@@ -55,14 +54,16 @@ class InvestigatorState(TypedDict, total=False):
     # exploration control — overwritten each round, not accumulated
     explore_targets: list[dict]     # [{"tool": str, "args": dict}, ...] — set by explore, consumed by fan-out
     current_question: str           # the single open "why" being pursued — "" on round 1
-
+    # transient: this round's raw gather results, consumed and cleared by
+    # integrate each round — NOT an accumulating reducer field, since it
+    # only needs to live for one round
+    gathered_evidence: list[dict]
     # the causal chain itself — the primary reasoning artifact
     evidence_chain: Annotated[list[EvidenceStep], add]
 
     # bookkeeping, same reducers as before
     past_actions: Annotated[list[dict], add]
     evidence_log: Annotated[list[dict], add]
-
     # dynamic: overwritten in full when set
     conclusion: Conclusion
 
@@ -73,3 +74,4 @@ class InvestigatorState(TypedDict, total=False):
 
     # output
     final_report: InvestigationReport
+    
